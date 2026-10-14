@@ -1,5 +1,5 @@
 // Service worker: app disponibile anche offline e notifica mattutina.
-const VERSION = 'jarvis-v4';
+const VERSION = 'jarvis-v5';
 const FONTS = 'jarvis-fonts';
 const SHELL = [
   './',
@@ -30,7 +30,8 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(VERSION)
-      .then((c) => c.addAll(SHELL))
+      // "reload": scarica dal server, mai dalla cache HTTP del browser.
+      .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
       .then(() => self.skipWaiting()),
   );
 });
@@ -45,10 +46,11 @@ self.addEventListener('activate', (event) => {
 });
 
 // Prima la rete, così gli aggiornamenti arrivano subito; la cache solo se offline.
+// "no-cache" fa sempre verificare al server se il file è cambiato (risposta 304 se uguale).
 async function networkFirst(req) {
   const cache = await caches.open(VERSION);
   try {
-    const res = await fetch(req);
+    const res = await fetch(new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' }));
     if (res.ok) cache.put(req, res.clone());
     return res;
   } catch (err) {

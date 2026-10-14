@@ -558,7 +558,18 @@ const OAUTH_ERRORS = {
 
 function start() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Service worker non registrato', e));
+    navigator.serviceWorker
+      .register('sw.js', { updateViaCache: 'none' })
+      .then((reg) => reg.update())
+      .catch((e) => console.warn('Service worker non registrato', e));
+    // Quando arriva una versione nuova, la pagina si ricarica da sola (se Jarvis non sta parlando).
+    let reloaded = false;
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || reloaded || busy) return;
+      reloaded = true;
+      location.reload();
+    });
   }
   placeCore();
   window.addEventListener('resize', () => requestAnimationFrame(placeCore));

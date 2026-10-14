@@ -280,6 +280,8 @@ textarea { resize: vertical; line-height: 1.4; }
 input[type="range"] { display: block; width: 100%; margin-top: 8px; accent-color: var(--holo); }
 input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--holo); margin: 0; }
 
+.version { padding: 0 var(--gutter) 16px; }
+
 .sheet-foot {
   position: sticky;
   bottom: 0;

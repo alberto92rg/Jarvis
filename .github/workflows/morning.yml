@@ -1,0 +1,28 @@
+name: Notifica mattutina
+
+# GitHub usa l'orario UTC: girano due esecuzioni (5:25 e 6:25 UTC) e lo script
+# invia solo quella che a Roma cade alle 7, sia con l'ora legale sia con la solare.
+on:
+  schedule:
+    - cron: '25 5,6 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notifica:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Installa web-push
+        run: npm install --no-save --no-audit --no-fund web-push@3
+      - name: Invia la notifica
+        run: node scripts/morning-push.mjs
+        env:
+          JARVIS_PUSH: ${{ secrets.JARVIS_PUSH }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' }}

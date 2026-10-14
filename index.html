@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Jarvis</title>
+  <meta name="description" content="Assistente personale: briefing, voce e notifica mattutina.">
+  <meta name="theme-color" content="#182231">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <span class="wordmark">Jarvis</span>
+      <div class="top-actions">
+        <button type="button" class="link-btn" id="btn-install" hidden>Installa</button>
+        <button type="button" class="icon-btn" id="btn-settings" aria-label="Impostazioni">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            <path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="hello">
+      <h1 id="greeting">Buongiorno, signore.</h1>
+      <p id="clock" class="meta"></p>
+    </section>
+
+    <main id="log" class="log" aria-live="polite"></main>
+
+    <form id="typebar" class="typebar" hidden>
+      <label class="sr-only" for="typed">Scriva a Jarvis</label>
+      <input id="typed" type="text" autocomplete="off" enterkeyhint="send" placeholder="Scriva a Jarvis">
+      <button type="submit" class="btn primary">Invia</button>
+    </form>
+
+    <nav class="dock" aria-label="Comandi">
+      <button type="button" id="btn-briefing" class="dock-btn">Briefing</button>
+      <button type="button" id="bell" class="bell" data-mode="idle" aria-label="Parla con Jarvis">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <circle cx="24" cy="10.5" r="3.2" fill="currentColor"/>
+          <path d="M24 14.5c-9.6 0-16.5 7.1-16.5 16.5h33c0-9.4-6.9-16.5-16.5-16.5z" fill="currentColor"/>
+          <rect x="4.5" y="33" width="39" height="5" rx="2.5" fill="currentColor"/>
+        </svg>
+      </button>
+      <button type="button" id="btn-type" class="dock-btn">Scrivi</button>
+    </nav>
+    <p id="bell-hint" class="hint">Tocchi la campanella e parli</p>
+  </div>
+
+  <dialog id="settings" class="sheet" aria-labelledby="settings-title">
+    <form id="settings-form">
+      <header class="sheet-head">
+        <h2 id="settings-title">Impostazioni</h2>
+        <button type="button" id="btn-close" class="icon-btn" aria-label="Chiudi">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+
+      <fieldset>
+        <legend>Cervello</legend>
+        <label>Chiave API Anthropic
+          <input name="anthropicKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…">
+        </label>
+        <label>Modello
+          <select name="model">
+            <option value="claude-sonnet-5-5">Sonnet 5.5 (consigliato)</option>
+            <option value="claude-haiku-5-5">Haiku 5.5 (più economico)</option>
+            <option value="claude-opus-5-5">Opus 5.5 (più capace)</option>
+          </select>
+        </label>
+        <p class="help">La chiave resta solo su questo telefono. Si crea su console.anthropic.com.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Account Google</legend>
+        <label>Client ID OAuth
+          <input name="googleClientId" autocomplete="off" spellcheck="false" placeholder="….apps.googleusercontent.com">
+        </label>
+        <label>Email dell'account
+          <input name="googleEmail" type="email" autocomplete="email">
+        </label>
+        <p class="help">Indirizzo da registrare su Google Cloud, sia come origine sia come URI di reindirizzamento:</p>
+        <p class="uri"><code id="redirect-uri"></code> <button type="button" class="link-btn" data-copy="redirect-uri">Copia</button></p>
+        <button type="button" class="btn" id="btn-google">Collega Google</button>
+        <p class="help" id="google-status"></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Clienti</legend>
+        <label>Un contatto per riga, nella forma Nome &lt;email&gt;
+          <textarea name="clients" rows="5" spellcheck="false" placeholder="Studio Rossi <info@studiorossi.it>"></textarea>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Canale YouTube</legend>
+        <label>Nome del canale (handle)
+          <input name="youtubeHandle" autocomplete="off" spellcheck="false" placeholder="@nomecanale">
+        </label>
+        <p class="help">Se lo lascia vuoto, uso il canale dell'account Google collegato.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Meteo</legend>
+        <label>Città <input name="city" autocomplete="off"></label>
+        <div class="pair">
+          <label>Latitudine <input name="lat" inputmode="decimal"></label>
+          <label>Longitudine <input name="lon" inputmode="decimal"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Voce</legend>
+        <label>Voce italiana <select name="voiceName" id="voice-select"></select></label>
+        <label>Velocità <output id="rate-out"></output>
+          <input name="voiceRate" type="range" min="0.7" max="1.4" step="0.05">
+        </label>
+        <label class="check"><input name="autoSpeak" type="checkbox"> Leggi ad alta voce le risposte</label>
+        <button type="button" class="btn" id="btn-voice-test">Prova la voce</button>
+      </fieldset>
+
+      <fieldset>
+        <legend>Notifica mattutina</legend>
+        <p class="help">Nei giorni feriali verso le 7:30 arriva una notifica con il meteo; toccandola si apre il briefing. La invia GitHub, che ha bisogno di un testo da copiare una volta sola.</p>
+        <button type="button" class="btn" id="btn-push">Attiva notifica mattutina</button>
+        <button type="button" class="btn" id="btn-push-test">Invia notifica di prova</button>
+        <div id="push-out" hidden>
+          <p class="help">Copi questo testo e lo incolli su GitHub nel segreto <strong>JARVIS_PUSH</strong> (repository, Settings, Secrets and variables, Actions). Contiene la chiave privata delle notifiche: non lo condivida.</p>
+          <textarea id="push-secret" rows="5" readonly spellcheck="false"></textarea>
+          <button type="button" class="btn" data-copy="push-secret">Copia il testo</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Dati su questo telefono</legend>
+        <button type="button" class="btn" id="btn-clear-chat">Cancella la conversazione</button>
+        <button type="button" class="btn" id="btn-reset-yt">Azzera i conteggi YouTube</button>
+        <button type="button" class="btn" id="btn-google-off">Scollega Google</button>
+        <details class="io">
+          <summary>Esporta o importa le impostazioni</summary>
+          <p class="help">Il testo esportato contiene la chiave API: lo tenga per sé.</p>
+          <textarea id="io-text" rows="5" spellcheck="false"></textarea>
+          <button type="button" class="btn" id="btn-export">Esporta</button>
+          <button type="button" class="btn" id="btn-import">Importa</button>
+        </details>
+      </fieldset>
+
+      <footer class="sheet-foot">
+        <button type="submit" class="btn primary" id="btn-save">Salva impostazioni</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" popover="manual" hidden></div>
+</body>
+</html>

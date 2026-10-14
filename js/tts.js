@@ -345,7 +345,8 @@ function browserSay(text, resolve, reject) {
     u.lang = 'it-IT';
     if (voice) u.voice = voice;
     u.rate = clamp(Number(s.voiceRate) || 1, 0.6, 1.6);
-    u.pitch = 0.82;
+    // Con la voce del telefono la "Profondità" abbassa il tono.
+    u.pitch = clamp(1 - (Number(s.voiceDepth) || 0) * 0.09, 0.6, 1);
     u.onend = next;
     u.onerror = (e) => {
       if (e.error === 'interrupted' || e.error === 'canceled') return finish();

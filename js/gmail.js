@@ -89,31 +89,34 @@ export async function listMessages(q, max = 20, { bodyLimit = 1500 } = {}) {
     .sort((a, b) => (a.data < b.data ? -1 : 1));
 }
 
-// Corrispondenza con i clienti dal momento indicato.
+// Solo posta in arrivo: messaggi nella casella "In arrivo" scritti dai clienti.
 export async function fetchClientMail(clients, sinceMs) {
-  const terms = clients.flatMap((c) => [`from:${c.email}`, `to:${c.email}`, `cc:${c.email}`]);
-  const q = `{${terms.join(' ')}} after:${Math.floor(sinceMs / 1000)}`;
-  const msgs = await listMessages(q, 25);
-  const perCliente = clients.map((c) => {
-    const mine = msgs.filter((m) => addresses([m.da, m.a, m.cc].join(' ')).includes(c.email));
-    return {
-      cliente: c.name,
-      email: c.email,
-      ricevute: mine.filter((m) => !m.inviataDaLei).length,
-      inviate: mine.filter((m) => m.inviataDaLei).length,
-    };
-  });
+  const from = clients.map((c) => `from:${c.email}`).join(' ');
+  const q = `in:inbox {${from}} after:${Math.floor(sinceMs / 1000)}`;
+  const msgs = (await listMessages(q, 20)).filter((m) => !m.inviataDaLei);
+  const sender = (m) => addresses(m.da)[0] || '';
+  const messaggi = msgs
+    .map((m) => {
+      const c = clients.find((x) => x.email === sender(m));
+      return c ? { cliente: c.name, data: m.data, oggetto: m.oggetto, nonLetta: m.nonLetta, allegati: m.allegati, testo: m.testo } : null;
+    })
+    .filter(Boolean);
   return {
-    perCliente,
-    messaggi: msgs.map((m) => ({
-      ...m,
-      clienti: clients
-        .filter((c) => addresses([m.da, m.a, m.cc].join(' ')).includes(c.email))
-        .map((c) => c.name),
-    })),
+    totale: messaggi.length,
+    perCliente: clients.map((c) => ({ cliente: c.name, nuove: messaggi.filter((m) => m.cliente === c.name).length })),
+    messaggi,
   };
 }
 
+// Le ricerche restano sempre nella posta in arrivo.
+export function inboxQuery(q) {
+  const cleaned = String(q || '')
+    .replace(/(^|\s)-?(in|label):\S+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return `in:inbox ${cleaned}`.trim();
+}
+
 export function searchMail(q, max = 5) {
-  return listMessages(q, max, { bodyLimit: 700 });
+  return listMessages(inboxQuery(q), max, { bodyLimit: 700 });
 }

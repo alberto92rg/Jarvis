@@ -1,99 +1,82 @@
-// Interfaccia: campanella, briefing, conversazione e impostazioni.
-import { getSettings, saveSettings, removeState, DEFAULTS } from './store.js';
+// Regia: ologramma, voce, briefing e impostazioni.
+import { getSettings, saveSettings, removeState, getState, setState as setStateFlag, DEFAULTS } from './store.js';
 import { JarvisError, NeedsGoogleAuth } from './errors.js';
 import { appUrl, consumeOAuthRedirect, startGoogleLogin, needsGoogleLogin, tokenInfo, forgetGoogle, googleConfigured } from './google.js';
-import { runBriefing, chat, loadHistory, remember, clearHistory } from './jarvis.js';
-import { canListen, canSpeak, listen, stopListening, speak, stopSpeaking, toSpeech, italianVoices, onVoicesReady } from './voice.js';
+import { runBriefing, chat, clearHistory } from './jarvis.js';
+import { canListen, listen, stopListening } from './voice.js';
+import * as tts from './tts.js';
+import { createHolo, SECTIONS } from './holo.js';
 import { enableMorningPush, testNotification } from './push.js';
-import { renderMarkdown } from './markdown.js';
-import { greeting, stamp, clockTime } from './util.js';
+import { clockTime } from './util.js';
 
 const $ = (s) => document.querySelector(s);
-const log = $('#log');
-const bell = $('#bell');
-const hint = $('#bell-hint');
+const coreBtn = $('#core');
 const dlg = $('#settings');
 const form = $('#settings-form');
-const typebar = $('#typebar');
-const typed = $('#typed');
+
+const holo = createHolo($('#holo'), { level: tts.level, spectrum: tts.spectrum });
+
 let busy = false;
+let session = 0;
+let prepared = null;
 
-// --- Stato della campanella ------------------------------------------------
+// --- Stato ------------------------------------------------------------------
 
-const HINTS = {
-  idle: () => (canListen ? 'Tocchi la campanella e parli' : 'La voce non è disponibile qui: usi Scrivi'),
-  listening: () => 'La ascolto',
-  thinking: () => 'Un momento',
-  speaking: () => 'Tocchi la campanella per interrompere',
+const CORE_LABEL = {
+  idle: 'Parla con Jarvis',
+  listening: 'Smetti di ascoltare',
+  thinking: 'Jarvis sta elaborando',
+  speaking: 'Interrompi Jarvis',
+  ready: 'Avvia il briefing',
 };
-const LABELS = { idle: 'Parla con Jarvis', listening: 'Smetti di ascoltare', thinking: 'Jarvis sta pensando', speaking: 'Interrompi la voce' };
 
-function setMode(mode) {
-  bell.dataset.mode = mode;
-  hint.textContent = HINTS[mode]();
-  bell.setAttribute('aria-label', LABELS[mode]);
-  $('#btn-briefing').disabled = mode === 'thinking';
+function setState(state) {
+  document.body.dataset.state = state;
+  holo.setMode(state);
+  coreBtn.setAttribute('aria-label', CORE_LABEL[state] || CORE_LABEL.idle);
+  $('#btn-briefing').disabled = state === 'thinking' || state === 'speaking';
 }
 
-// --- Conversazione a schermo ---------------------------------------------
+function rest() {
+  setState('idle');
+  holo.setIcon('core');
+  holo.setMetric('');
+  holo.setProgress(-1);
+  document.body.dataset.section = '';
+}
 
-// Porta in vista l'ultimo elemento; se è lungo (un briefing), ne mostra l'inizio.
-function scrollEnd(el) {
-  const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-  requestAnimationFrame(() => {
-    const tall = el && el.offsetHeight > log.clientHeight * 0.6;
-    log.scrollTo({ top: tall ? el.offsetTop - 12 : log.scrollHeight, behavior });
+function placeCore() {
+  const g = holo.geometry();
+  const size = g.r * 2.1;
+  Object.assign(coreBtn.style, {
+    left: `${g.x - size / 2}px`,
+    top: `${g.y - size / 2}px`,
+    width: `${size}px`,
+    height: `${size}px`,
   });
 }
 
-function jarvisTurn(md, { error = false, actions = [], past = false } = {}) {
-  const el = document.createElement('article');
-  el.className = `turn jarvis${error ? ' error' : ''}${past ? ' past' : ''}`;
-  const body = document.createElement('div');
-  body.className = 'prose';
-  body.innerHTML = renderMarkdown(md);
-  el.append(body);
-  const all = !error && canSpeak ? [{ label: 'Ascolta', onClick: () => speakText(md) }, ...actions] : actions;
-  if (all.length) {
-    const bar = document.createElement('div');
-    bar.className = 'turn-actions';
-    for (const a of all) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'link-btn';
-      b.textContent = a.label;
-      b.addEventListener('click', a.onClick);
-      bar.append(b);
-    }
-    el.append(bar);
+// --- Messaggi brevi -----------------------------------------------------------
+
+let statusTimer;
+function status(text, { warn = false, settings = false, sticky = false } = {}) {
+  const el = $('#status');
+  const action = $('#status-action');
+  clearTimeout(statusTimer);
+  el.textContent = text || '';
+  el.classList.toggle('warn', warn);
+  el.classList.toggle('show', Boolean(text));
+  action.hidden = !settings;
+  if (text && !sticky) {
+    statusTimer = setTimeout(() => {
+      el.classList.remove('show');
+      action.hidden = true;
+    }, 7000);
   }
-  log.append(el);
-  scrollEnd(el);
-  return el;
 }
 
-function albyTurn(text, { past = false } = {}) {
-  const p = document.createElement('p');
-  p.className = `turn alby${past ? ' past' : ''}`;
-  p.textContent = text;
-  log.append(p);
-  scrollEnd();
-  return p;
-}
-
-function status(text) {
-  const p = document.createElement('p');
-  p.className = 'status';
-  p.textContent = text;
-  log.append(p);
-  scrollEnd();
-  return { set: (t) => (p.textContent = t), done: () => p.remove() };
-}
-
-const settingsAction = () => ({ label: 'Apri impostazioni', onClick: openSettings });
-
-function errorTurn(message, actions = []) {
-  return jarvisTurn(message, { error: true, actions });
+function say(text) {
+  $('#sr-live').textContent = text;
 }
 
 let toastTimer;
@@ -107,7 +90,7 @@ function toast(text) {
       t.showPopover();
     }
   } catch {
-    /* popover non supportato: resta visibile come elemento fisso */
+    /* popover non supportato */
   }
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
@@ -120,205 +103,283 @@ function toast(text) {
   }, 2600);
 }
 
-function speakText(md) {
-  if (!canSpeak) return;
-  stopListening();
-  setMode('speaking');
-  speak(toSpeech(md), {
-    onend: () => setMode('idle'),
-    onerror: (e) => {
-      setMode('idle');
-      toast(e.message);
-    },
-  });
-}
-
-// --- Azioni ----------------------------------------------------------------
+// --- Errori -------------------------------------------------------------------
 
 function ready() {
   if (getSettings().anthropicKey) return true;
-  errorTurn('Mi manca ancora la chiave API Anthropic, signore. Senza quella non posso pensare.', [settingsAction()]);
+  holo.flash(true);
+  status('Mi manca la chiave API Anthropic, signore.', { warn: true, settings: true, sticky: true });
   return false;
 }
 
 function goGoogle(pending) {
   try {
-    status("Mi collego a Google…");
+    status('Collegamento a Google…');
     startGoogleLogin(pending);
   } catch (e) {
-    errorTurn(e.message, [settingsAction()]);
+    status(e.message, { warn: true, settings: true, sticky: true });
   }
 }
 
-function handleError(e, pending) {
+function fail(e, pending) {
   if (e instanceof NeedsGoogleAuth) return goGoogle(pending);
   if (!(e instanceof JarvisError)) console.error(e);
-  errorTurn(e instanceof JarvisError ? e.message : `Imprevisto: ${e?.message || e}`);
+  rest();
+  holo.flash(true);
+  const msg = e instanceof JarvisError ? e.message : `Imprevisto: ${e?.message || e}`;
+  status(msg, { warn: true, settings: /chiave|impostazioni|configurat|Client ID/i.test(msg), sticky: true });
 }
 
-async function doBriefing() {
-  if (busy || !ready()) return;
+let voiceWarned = false;
+function voiceFallback(e) {
+  if (voiceWarned) return;
+  voiceWarned = true;
+  status(`${e.message} Uso la voce del telefono.`, { warn: true });
+}
+
+// --- Voce -----------------------------------------------------------------------
+
+async function prepareSpeech(text) {
+  try {
+    return await tts.synth(text);
+  } catch (e) {
+    voiceFallback(e);
+    return { kind: 'browser', text };
+  }
+}
+
+function limiter(n) {
+  let active = 0;
+  const queue = [];
+  const next = () => {
+    if (active >= n || !queue.length) return;
+    active++;
+    const { fn, res, rej } = queue.shift();
+    fn().then(res, rej).finally(() => {
+      active--;
+      next();
+    });
+  };
+  return (fn) =>
+    new Promise((res, rej) => {
+      queue.push({ fn, res, rej });
+      next();
+    });
+}
+
+// --- Briefing -------------------------------------------------------------------
+
+async function prepareBriefing(my) {
+  setState('thinking');
+  holo.setIcon('core');
+  holo.setMetric('');
+  holo.setProgress(-1);
+  holo.resetSatellites('off');
+  status('');
+  const plan = await runBriefing((name, ok) => holo.setSatellite(name, ok ? 'ok' : 'error'));
+  if (my !== session) return null;
+  const run = limiter(3);
+  const audio = plan.segments.map((seg) => run(() => prepareSpeech(seg.text)));
+  return { plan, audio };
+}
+
+async function playBriefing(prep, my) {
+  const { plan, audio } = prep;
+  const n = plan.segments.length;
+  setState('speaking');
+  holo.resetSatellites('pending');
+  for (let i = 0; i < n; i++) {
+    const item = await audio[i];
+    if (my !== session) return;
+    const seg = plan.segments[i];
+    document.body.dataset.section = seg.id;
+    document.body.dataset.metric = seg.metric || '';
+    holo.setIcon(seg.icon, { alert: Boolean(seg.alert) });
+    holo.setMetric(seg.metric || '');
+    holo.setProgress(i / n);
+    if (SECTIONS.includes(seg.id)) holo.setSatellite(seg.id, 'active', seg.id === 'meteo' ? seg.icon : undefined);
+    say(seg.text);
+    try {
+      await tts.play(item);
+    } catch (e) {
+      voiceFallback(e);
+    }
+    if (my !== session) return;
+    if (SECTIONS.includes(seg.id)) holo.setSatellite(seg.id, 'done');
+    await new Promise((r) => setTimeout(r, 260));
+  }
+  holo.setProgress(1);
+  await new Promise((r) => setTimeout(r, 500));
+  if (my === session) {
+    holo.resetSatellites('off');
+    rest();
+  }
+}
+
+async function startBriefing({ autoplay = true } = {}) {
+  if (busy) return;
+  if (!ready()) return;
   if (needsGoogleLogin()) return goGoogle({ type: 'briefing' });
   busy = true;
-  stopSpeaking();
-  setMode('thinking');
-  const st = status('Preparo il briefing…');
+  prepared = null;
+  voiceWarned = false;
+  const my = ++session;
+  if (autoplay) tts.unlockAudio();
   try {
-    const text = await runBriefing(st.set);
-    st.done();
-    setMode('idle');
-    jarvisTurn(text);
-    remember('Briefing, per favore.', text);
-    if (getSettings().autoSpeak) speakText(text);
-  } catch (e) {
-    st.done();
-    setMode('idle');
-    handleError(e, { type: 'briefing' });
-  } finally {
-    busy = false;
-  }
-}
-
-const TOOL_STATUS = {
-  cerca_email: 'Consulto la posta…',
-  leggi_agenda: "Consulto l'agenda…",
-  statistiche_youtube: 'Controllo il canale…',
-  meteo: 'Consulto il meteo…',
-};
-
-async function doChat(text, { shown = false } = {}) {
-  if (busy || !ready()) return;
-  if (needsGoogleLogin()) return goGoogle({ type: 'chat', text });
-  if (!shown) albyTurn(text);
-  busy = true;
-  stopSpeaking();
-  setMode('thinking');
-  const st = status('Ci penso…');
-  try {
-    const reply = await chat(text, (name) => st.set(TOOL_STATUS[name] || 'Un momento…'));
-    st.done();
-    setMode('idle');
-    jarvisTurn(reply);
-    if (getSettings().autoSpeak) speakText(reply);
-  } catch (e) {
-    st.done();
-    setMode('idle');
-    handleError(e, { type: 'chat', text });
-  } finally {
-    busy = false;
-  }
-}
-
-const TRIGGER = /^\s*(briefing|buongiorno|buon pomeriggio|buonasera|report|rapporto)([\s,]+jarvis)?[\s.!,]*$/i;
-function isBriefingRequest(text) {
-  return TRIGGER.test(text) || (/\b(briefing|report)\b/i.test(text) && text.trim().split(/\s+/).length <= 6);
-}
-
-function handleText(text) {
-  if (isBriefingRequest(text)) {
-    albyTurn(text);
-    return doBriefing();
-  }
-  return doChat(text);
-}
-
-bell.addEventListener('click', async () => {
-  const mode = bell.dataset.mode;
-  if (mode === 'speaking') {
-    stopSpeaking();
-    setMode('idle');
-    return;
-  }
-  if (mode === 'listening') {
-    stopListening();
-    return;
-  }
-  if (busy) return;
-  if (!canListen) {
-    showTypebar();
-    return;
-  }
-  setMode('listening');
-  const live = albyTurn('…');
-  live.classList.add('live');
-  try {
-    const text = await listen({ onPartial: (t) => (live.textContent = t || '…') });
-    live.classList.remove('live');
-    setMode('idle');
-    if (!text) {
-      live.remove();
+    const prep = await prepareBriefing(my);
+    if (!prep) return;
+    if (!autoplay && !tts.audioReady()) {
+      await Promise.all(prep.audio);
+      if (my !== session) return;
+      prepared = prep;
+      setState('ready');
+      holo.setIcon('start');
       return;
     }
-    live.textContent = text;
-    if (isBriefingRequest(text)) await doBriefing();
-    else await doChat(text, { shown: true });
+    await playBriefing(prep, my);
   } catch (e) {
-    live.remove();
-    setMode('idle');
-    handleError(e);
+    if (my === session) fail(e, { type: 'briefing' });
+  } finally {
+    if (my === session) busy = false;
   }
-});
-
-$('#btn-briefing').addEventListener('click', () => doBriefing());
-
-function showTypebar() {
-  typebar.hidden = false;
-  typed.focus();
-}
-$('#btn-type').addEventListener('click', () => {
-  if (typebar.hidden) showTypebar();
-  else typebar.hidden = true;
-});
-typebar.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const text = typed.value.trim();
-  if (!text || busy) return;
-  typed.value = '';
-  handleText(text);
-});
-
-// --- Intestazione ----------------------------------------------------------
-
-function renderClock() {
-  $('#greeting').textContent = `${greeting()}, signore.`;
-  $('#clock').textContent = stamp();
 }
 
-// --- Impostazioni ----------------------------------------------------------
+async function playPrepared() {
+  const prep = prepared;
+  prepared = null;
+  if (!prep) return rest();
+  tts.unlockAudio();
+  busy = true;
+  const my = ++session;
+  try {
+    await playBriefing(prep, my);
+  } finally {
+    if (my === session) busy = false;
+  }
+}
+
+// --- Conversazione -------------------------------------------------------------
+
+const TOOL_ICON = { cerca_email: 'mail', leggi_agenda: 'calendar', statistiche_youtube: 'play', meteo: 'sun' };
+const TRIGGER = /^\s*(briefing|buongiorno|buon pomeriggio|buonasera|report|rapporto)([\s,]+jarvis)?[\s.!,]*$/i;
+const isBriefingRequest = (t) => TRIGGER.test(t) || (/\b(briefing|report)\b/i.test(t) && t.trim().split(/\s+/).length <= 6);
+
+async function converse(text) {
+  if (!ready()) return rest();
+  if (needsGoogleLogin()) return goGoogle({ type: 'chat', text });
+  busy = true;
+  voiceWarned = false;
+  const my = ++session;
+  try {
+    setState('thinking');
+    holo.setIcon('core');
+    let lastIcon = 'wave';
+    const reply = await chat(text, (name) => {
+      lastIcon = TOOL_ICON[name] || lastIcon;
+      holo.setIcon(lastIcon);
+    });
+    if (my !== session) return;
+    const item = await prepareSpeech(reply);
+    if (my !== session) return;
+    setState('speaking');
+    holo.setIcon(lastIcon);
+    say(reply);
+    await tts.play(item).catch(voiceFallback);
+    if (my === session) rest();
+  } catch (e) {
+    if (my === session) fail(e, { type: 'chat', text });
+  } finally {
+    if (my === session) busy = false;
+  }
+}
+
+async function onCore() {
+  const state = document.body.dataset.state;
+  if (state === 'ready') return playPrepared();
+  if (state === 'speaking') {
+    session++;
+    tts.stop();
+    busy = false;
+    holo.resetSatellites('off');
+    return rest();
+  }
+  if (state === 'listening') return stopListening();
+  if (busy) return;
+  tts.unlockAudio();
+  if (!canListen) {
+    status('Il riconoscimento vocale non è disponibile su questo browser.', { warn: true });
+    return;
+  }
+  status('');
+  setState('listening');
+  holo.setIcon('mic');
+  try {
+    const text = await listen();
+    if (document.body.dataset.state !== 'listening') return;
+    if (!text) return rest();
+    if (isBriefingRequest(text)) {
+      rest();
+      return startBriefing({ autoplay: true });
+    }
+    await converse(text);
+  } catch (e) {
+    fail(e);
+  }
+}
+
+coreBtn.addEventListener('click', onCore);
+$('#btn-briefing').addEventListener('click', () => startBriefing({ autoplay: true }));
+
+// --- Impostazioni --------------------------------------------------------------
+
+function fillSelect(sel, values, current, labelFn = (v) => v) {
+  sel.replaceChildren(...values.map((v) => new Option(labelFn(v), v, false, v === current)));
+  if (values.includes(current)) sel.value = current;
+}
 
 function renderVoices() {
+  const s = getSettings();
+  fillSelect($('#google-voice'), tts.GOOGLE_VOICES, s.googleVoice);
+  fillSelect($('#openai-voice'), tts.OPENAI_VOICES, s.openaiVoice);
   const sel = $('#voice-select');
-  const current = getSettings().voiceName;
-  const voices = italianVoices();
+  const voices = tts.italianVoices();
   sel.replaceChildren(new Option(voices.length ? 'Automatica' : 'Nessuna voce italiana trovata', ''));
-  for (const v of voices) sel.append(new Option(v.name, v.name, false, v.name === current));
-  sel.value = voices.some((v) => v.name === current) ? current : '';
+  for (const v of voices) sel.append(new Option(v.name, v.name, false, v.name === s.voiceName));
+  sel.value = voices.some((v) => v.name === s.voiceName) ? s.voiceName : '';
+}
+
+function renderProvider() {
+  const p = form.elements.ttsProvider.value;
+  form.querySelectorAll('[data-provider]').forEach((el) => (el.hidden = el.dataset.provider !== p));
 }
 
 function renderGoogleStatus() {
   const t = tokenInfo();
   const el = $('#google-status');
   if (!googleConfigured()) el.textContent = 'Inserisca il Client ID e salvi, poi colleghi Google.';
-  else if (t) el.textContent = `Collegato fino alle ${clockTime(new Date(t.exp))}. Dopo, il collegamento si rinnova da solo con un passaggio rapido.`;
+  else if (t) el.textContent = `Collegato fino alle ${clockTime(new Date(t.exp))}. Dopo, il collegamento si rinnova con un passaggio rapido.`;
   else el.textContent = 'Non collegato.';
 }
 
-function renderRate() {
+function renderRanges() {
   $('#rate-out').textContent = `${Number(form.elements.voiceRate.value).toFixed(2)}×`;
+  const d = Number(form.elements.voiceDepth.value);
+  $('#depth-out').textContent = d ? `−${String(d).replace('.', ',')} ${d === 1 ? 'semitono' : 'semitoni'}` : 'naturale';
 }
 
 function fillSettings() {
   const s = getSettings();
   for (const [k, v] of Object.entries(s)) {
     const el = form.elements.namedItem(k);
-    if (!el) continue;
+    if (!el || el.tagName === 'SELECT' && ['googleVoice', 'openaiVoice', 'voiceName'].includes(k)) continue;
     if (el.type === 'checkbox') el.checked = Boolean(v);
-    else if (k !== 'voiceName') el.value = v ?? '';
+    else el.value = v ?? '';
   }
   $('#redirect-uri').textContent = appUrl();
   renderVoices();
+  renderProvider();
   renderGoogleStatus();
-  renderRate();
+  renderRanges();
 }
 
 const num = (v, d) => {
@@ -331,6 +392,15 @@ function readSettings() {
   return {
     anthropicKey: f.anthropicKey.value.trim(),
     model: f.model.value,
+    ttsProvider: f.ttsProvider.value,
+    googleTtsKey: f.googleTtsKey.value.trim(),
+    googleVoice: f.googleVoice.value || DEFAULTS.googleVoice,
+    openaiKey: f.openaiKey.value.trim(),
+    openaiVoice: f.openaiVoice.value || DEFAULTS.openaiVoice,
+    voiceName: f.voiceName.value,
+    voiceRate: num(f.voiceRate.value, DEFAULTS.voiceRate),
+    voiceDepth: num(f.voiceDepth.value, DEFAULTS.voiceDepth),
+    voiceFx: f.voiceFx.checked,
     googleClientId: f.googleClientId.value.trim(),
     googleEmail: f.googleEmail.value.trim(),
     youtubeHandle: f.youtubeHandle.value.trim(),
@@ -338,9 +408,6 @@ function readSettings() {
     city: f.city.value.trim() || DEFAULTS.city,
     lat: num(f.lat.value, DEFAULTS.lat),
     lon: num(f.lon.value, DEFAULTS.lon),
-    voiceName: f.voiceName.value,
-    voiceRate: num(f.voiceRate.value, 1),
-    autoSpeak: f.autoSpeak.checked,
   };
 }
 
@@ -351,34 +418,50 @@ function openSettings() {
 }
 
 $('#btn-settings').addEventListener('click', openSettings);
+$('#status-action').addEventListener('click', openSettings);
 $('#btn-close').addEventListener('click', () => dlg.close());
-form.elements.voiceRate.addEventListener('input', renderRate);
+form.elements.voiceRate.addEventListener('input', renderRanges);
+form.elements.voiceDepth.addEventListener('input', renderRanges);
+form.elements.ttsProvider.addEventListener('change', renderProvider);
+if ('speechSynthesis' in window) speechSynthesis.addEventListener?.('voiceschanged', () => dlg.open && renderVoices());
 
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   saveSettings(readSettings());
   dlg.close();
+  status('');
   toast('Impostazioni salvate');
+});
+
+$('#btn-voice-test').addEventListener('click', async (e) => {
+  const b = e.currentTarget;
+  tts.unlockAudio();
+  saveSettings(readSettings());
+  b.disabled = true;
+  voiceWarned = false;
+  try {
+    const item = await tts.synth('Buongiorno, signore. Sistemi vocali online. Le sembra una voce adeguata al suo rango?');
+    await tts.play(item);
+  } catch (err) {
+    toast(err.message);
+    try {
+      await tts.play({ kind: 'browser', text: 'Voce del telefono, signore. In attesa di istruzioni.' });
+    } catch {
+      /* nessuna voce */
+    }
+  } finally {
+    b.disabled = false;
+  }
 });
 
 $('#btn-google').addEventListener('click', () => {
   saveSettings(readSettings());
-  if (!googleConfigured()) {
-    toast('Prima inserisca il Client ID');
-    return;
-  }
+  if (!googleConfigured()) return toast('Prima inserisca il Client ID');
   try {
     startGoogleLogin(null);
-  } catch (e) {
-    toast(e.message);
+  } catch (err) {
+    toast(err.message);
   }
-});
-
-$('#btn-voice-test').addEventListener('click', () => {
-  const f = form.elements;
-  saveSettings({ voiceName: f.voiceName.value, voiceRate: num(f.voiceRate.value, 1) });
-  if (!canSpeak) return toast('La sintesi vocale non è disponibile qui');
-  speak('Buongiorno, signore. Le sembra una voce adeguata al suo rango?', { onerror: (e) => toast(e.message) });
 });
 
 $('#btn-push').addEventListener('click', async (e) => {
@@ -406,7 +489,6 @@ $('#btn-push-test').addEventListener('click', async () => {
 
 $('#btn-clear-chat').addEventListener('click', () => {
   clearHistory();
-  log.replaceChildren();
   toast('Conversazione cancellata');
 });
 
@@ -451,7 +533,7 @@ document.addEventListener('click', async (e) => {
   }
 });
 
-// --- Installazione ---------------------------------------------------------
+// --- Installazione ---------------------------------------------------------------
 
 let installPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
@@ -467,40 +549,20 @@ $('#btn-install').addEventListener('click', async () => {
   $('#btn-install').hidden = true;
 });
 
-// --- Avvio -----------------------------------------------------------------
-
-function restoreHistory() {
-  for (const m of loadHistory().slice(-6)) {
-    if (m.role === 'user') albyTurn(m.content, { past: true });
-    else jarvisTurn(m.content, { past: true });
-  }
-}
-
-function welcome() {
-  if (!getSettings().anthropicKey) {
-    jarvisTurn(
-      "Benvenuto, signore. Prima di cominciare mi servono due cose: la chiave API Anthropic, per pensare, e l'accesso a Google, per posta, agenda e canale. Trova tutto nelle impostazioni.",
-      { actions: [settingsAction()] },
-    );
-  } else if (!log.children.length) {
-    jarvisTurn('A sua disposizione. Chieda il briefing, oppure tocchi la campanella e parli.');
-  }
-}
+// --- Avvio -----------------------------------------------------------------------
 
 const OAUTH_ERRORS = {
-  access_denied: 'Accesso a Google annullato. Quando vuole, riprovi dalle impostazioni.',
-  state_mismatch: 'Risposta di Google non riconosciuta: per prudenza la ignoro. Riprovi il collegamento.',
+  access_denied: 'Accesso a Google annullato. Riprovi dalle impostazioni.',
+  state_mismatch: 'Risposta di Google non riconosciuta: per prudenza la ignoro.',
 };
 
 function start() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Service worker non registrato', e));
   }
-  renderClock();
-  setInterval(renderClock, 20_000);
-  setMode('idle');
-  onVoicesReady(() => dlg.open && renderVoices());
-  restoreHistory();
+  placeCore();
+  window.addEventListener('resize', () => requestAnimationFrame(placeCore));
+  rest();
 
   const oauth = consumeOAuthRedirect();
   const params = new URLSearchParams(location.search);
@@ -508,15 +570,23 @@ function start() {
   if (fromNotification) history.replaceState(null, '', appUrl());
 
   if (oauth?.error) {
-    errorTurn(OAUTH_ERRORS[oauth.error] || `Google ha rifiutato l'accesso (${oauth.error}).`, [settingsAction()]);
+    status(OAUTH_ERRORS[oauth.error] || `Google ha rifiutato l'accesso (${oauth.error}).`, { warn: true, settings: true, sticky: true });
   } else if (oauth?.ok) {
     const p = oauth.pending;
-    if (p?.type === 'briefing') return void doBriefing();
-    if (p?.type === 'chat' && p.text) return void doChat(p.text);
+    if (p?.type === 'briefing') return void startBriefing({ autoplay: false });
+    if (p?.type === 'chat' && p.text) {
+      status('Google collegato. Tocchi il nucleo e ripeta la domanda.');
+      return;
+    }
     toast('Google collegato');
   }
-  if (fromNotification) return void doBriefing();
-  welcome();
+  if (fromNotification) return void startBriefing({ autoplay: false });
+  if (!getSettings().anthropicKey) {
+    status('Benvenuto, signore. Configuri Jarvis nelle impostazioni.', { settings: true, sticky: true });
+  } else if (!getState('hintShown')) {
+    setStateFlag('hintShown', true);
+    status('Tocchi il nucleo per parlare, il pulsante a sinistra per il briefing.');
+  }
 }
 
 start();

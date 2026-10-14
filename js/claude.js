@@ -15,7 +15,7 @@ function explain(status, msg) {
 }
 
 // system: stringa, oppure [parte stabile, parte variabile]. La parte stabile va in cache.
-export async function callClaude({ system, messages, tools, maxTokens = 1200 }) {
+export async function callClaude({ system, messages, tools, toolChoice, maxTokens = 1200 }) {
   const { anthropicKey, model } = getSettings();
   if (!anthropicKey) throw new JarvisError('Manca la chiave API Anthropic nelle impostazioni.');
   const parts = Array.isArray(system) ? system : [system];
@@ -28,6 +28,7 @@ export async function callClaude({ system, messages, tools, maxTokens = 1200 }) 
     messages,
   };
   if (tools?.length) body.tools = tools;
+  if (toolChoice) body.tool_choice = toolChoice;
   let r;
   try {
     r = await fetch(ENDPOINT, {

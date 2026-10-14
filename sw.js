@@ -1,5 +1,5 @@
 // Service worker: app disponibile anche offline e notifica mattutina.
-const VERSION = 'jarvis-v1';
+const VERSION = 'jarvis-v2';
 const FONTS = 'jarvis-fonts';
 const SHELL = [
   './',
@@ -18,7 +18,8 @@ const SHELL = [
   'js/jarvis.js',
   'js/voice.js',
   'js/push.js',
-  'js/markdown.js',
+  'js/holo.js',
+  'js/tts.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',

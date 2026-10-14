@@ -11,9 +11,15 @@ export const DEFAULTS = Object.freeze({
   city: 'Roma',
   lat: 41.9028,
   lon: 12.4964,
+  ttsProvider: 'google',
+  googleTtsKey: '',
+  googleVoice: 'Charon',
+  openaiKey: '',
+  openaiVoice: 'onyx',
   voiceName: '',
-  voiceRate: 1,
-  autoSpeak: true,
+  voiceRate: 1.05,
+  voiceDepth: 1,
+  voiceFx: true,
 });
 
 function read(key) {

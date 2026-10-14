@@ -4,64 +4,52 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Jarvis</title>
-  <meta name="description" content="Assistente personale: briefing, voce e notifica mattutina.">
-  <meta name="theme-color" content="#182231">
+  <meta name="description" content="Assistente personale: briefing a voce, ologramma e notifica mattutina.">
+  <meta name="theme-color" content="#010810">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;500;600&display=swap">
   <link rel="stylesheet" href="css/app.css">
   <script type="module" src="js/main.js"></script>
 </head>
-<body>
-  <div class="app">
-    <header class="top">
-      <span class="wordmark">Jarvis</span>
-      <div class="top-actions">
-        <button type="button" class="link-btn" id="btn-install" hidden>Installa</button>
-        <button type="button" class="icon-btn" id="btn-settings" aria-label="Impostazioni">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
-            <path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>
-          </svg>
-        </button>
-      </div>
-    </header>
+<body data-state="idle">
+  <canvas id="holo" aria-hidden="true"></canvas>
+  <button type="button" id="core" class="core" aria-label="Parla con Jarvis"></button>
 
-    <section class="hello">
-      <h1 id="greeting">Buongiorno, signore.</h1>
-      <p id="clock" class="meta"></p>
-    </section>
+  <header class="top">
+    <button type="button" id="btn-install" class="hud-btn small" aria-label="Installa l'app" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 19h14"/></svg>
+    </button>
+  </header>
 
-    <main id="log" class="log" aria-live="polite"></main>
-
-    <form id="typebar" class="typebar" hidden>
-      <label class="sr-only" for="typed">Scriva a Jarvis</label>
-      <input id="typed" type="text" autocomplete="off" enterkeyhint="send" placeholder="Scriva a Jarvis">
-      <button type="submit" class="btn primary">Invia</button>
-    </form>
-
-    <nav class="dock" aria-label="Comandi">
-      <button type="button" id="btn-briefing" class="dock-btn">Briefing</button>
-      <button type="button" id="bell" class="bell" data-mode="idle" aria-label="Parla con Jarvis">
-        <svg viewBox="0 0 48 48" aria-hidden="true">
-          <circle cx="24" cy="10.5" r="3.2" fill="currentColor"/>
-          <path d="M24 14.5c-9.6 0-16.5 7.1-16.5 16.5h33c0-9.4-6.9-16.5-16.5-16.5z" fill="currentColor"/>
-          <rect x="4.5" y="33" width="39" height="5" rx="2.5" fill="currentColor"/>
-        </svg>
-      </button>
-      <button type="button" id="btn-type" class="dock-btn">Scrivi</button>
-    </nav>
-    <p id="bell-hint" class="hint">Tocchi la campanella e parli</p>
+  <div class="status-wrap">
+    <p id="status" class="status" role="status"></p>
+    <button type="button" id="status-action" class="link-btn" hidden>Apri impostazioni</button>
   </div>
+  <p id="sr-live" class="sr-only" aria-live="polite"></p>
+
+  <nav class="dock" aria-label="Comandi">
+    <button type="button" id="btn-briefing" class="hud-btn" aria-label="Briefing">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="1.8"/><path d="M8.2 8.2a5.4 5.4 0 0 0 0 7.6M15.8 8.2a5.4 5.4 0 0 1 0 7.6M5.4 5.4a9.3 9.3 0 0 0 0 13.2M18.6 5.4a9.3 9.3 0 0 1 0 13.2"/>
+      </svg>
+    </button>
+    <button type="button" id="btn-settings" class="hud-btn" aria-label="Impostazioni">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>
+      </svg>
+    </button>
+  </nav>
 
   <dialog id="settings" class="sheet" aria-labelledby="settings-title">
     <form id="settings-form">
       <header class="sheet-head">
         <h2 id="settings-title">Impostazioni</h2>
-        <button type="button" id="btn-close" class="icon-btn" aria-label="Chiudi">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        <button type="button" id="btn-close" class="hud-btn small" aria-label="Chiudi">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </header>
 
@@ -81,6 +69,40 @@
       </fieldset>
 
       <fieldset>
+        <legend>Voce</legend>
+        <label>Voce di Jarvis
+          <select name="ttsProvider" id="tts-provider">
+            <option value="google">Google HD (consigliata)</option>
+            <option value="openai">OpenAI</option>
+            <option value="browser">Voce del telefono</option>
+          </select>
+        </label>
+        <div data-provider="google">
+          <label>Chiave API Google Cloud (Text-to-Speech)
+            <input name="googleTtsKey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+          </label>
+          <label>Timbro <select name="googleVoice" id="google-voice"></select></label>
+        </div>
+        <div data-provider="openai">
+          <label>Chiave API OpenAI
+            <input name="openaiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…">
+          </label>
+          <label>Timbro <select name="openaiVoice" id="openai-voice"></select></label>
+        </div>
+        <div data-provider="browser">
+          <label>Voce italiana del telefono <select name="voiceName" id="voice-select"></select></label>
+        </div>
+        <label>Velocità <output id="rate-out"></output>
+          <input name="voiceRate" type="range" min="0.85" max="1.3" step="0.05">
+        </label>
+        <label>Profondità <output id="depth-out"></output>
+          <input name="voiceDepth" type="range" min="0" max="3" step="0.5">
+        </label>
+        <label class="check"><input name="voiceFx" type="checkbox"> Effetto sistema di bordo</label>
+        <button type="button" class="btn" id="btn-voice-test">Prova la voce</button>
+      </fieldset>
+
+      <fieldset>
         <legend>Account Google</legend>
         <label>Client ID OAuth
           <input name="googleClientId" autocomplete="off" spellcheck="false" placeholder="….apps.googleusercontent.com">
@@ -88,7 +110,7 @@
         <label>Email dell'account
           <input name="googleEmail" type="email" autocomplete="email">
         </label>
-        <p class="help">Indirizzo da registrare su Google Cloud, sia come origine sia come URI di reindirizzamento:</p>
+        <p class="help">Indirizzo da registrare su Google Cloud come URI di reindirizzamento:</p>
         <p class="uri"><code id="redirect-uri"></code> <button type="button" class="link-btn" data-copy="redirect-uri">Copia</button></p>
         <button type="button" class="btn" id="btn-google">Collega Google</button>
         <p class="help" id="google-status"></p>
@@ -96,7 +118,7 @@
 
       <fieldset>
         <legend>Clienti</legend>
-        <label>Un contatto per riga, nella forma Nome &lt;email&gt;
+        <label>Un contatto per riga, nella forma Nome &lt;email&gt;. Jarvis legge solo la posta in arrivo da questi indirizzi.
           <textarea name="clients" rows="5" spellcheck="false" placeholder="Studio Rossi <info@studiorossi.it>"></textarea>
         </label>
       </fieldset>
@@ -106,7 +128,6 @@
         <label>Nome del canale (handle)
           <input name="youtubeHandle" autocomplete="off" spellcheck="false" placeholder="@nomecanale">
         </label>
-        <p class="help">Se lo lascia vuoto, uso il canale dell'account Google collegato.</p>
       </fieldset>
 
       <fieldset>
@@ -119,18 +140,8 @@
       </fieldset>
 
       <fieldset>
-        <legend>Voce</legend>
-        <label>Voce italiana <select name="voiceName" id="voice-select"></select></label>
-        <label>Velocità <output id="rate-out"></output>
-          <input name="voiceRate" type="range" min="0.7" max="1.4" step="0.05">
-        </label>
-        <label class="check"><input name="autoSpeak" type="checkbox"> Leggi ad alta voce le risposte</label>
-        <button type="button" class="btn" id="btn-voice-test">Prova la voce</button>
-      </fieldset>
-
-      <fieldset>
         <legend>Notifica mattutina</legend>
-        <p class="help">Nei giorni feriali verso le 7:30 arriva una notifica con il meteo; toccandola si apre il briefing. La invia GitHub, che ha bisogno di un testo da copiare una volta sola.</p>
+        <p class="help">Nei giorni feriali verso le 7:30 arriva una notifica con il meteo; toccandola Jarvis prepara il briefing. La invia GitHub, che ha bisogno di un testo da copiare una volta sola.</p>
         <button type="button" class="btn" id="btn-push">Attiva notifica mattutina</button>
         <button type="button" class="btn" id="btn-push-test">Invia notifica di prova</button>
         <div id="push-out" hidden>
@@ -147,7 +158,7 @@
         <button type="button" class="btn" id="btn-google-off">Scollega Google</button>
         <details class="io">
           <summary>Esporta o importa le impostazioni</summary>
-          <p class="help">Il testo esportato contiene la chiave API: lo tenga per sé.</p>
+          <p class="help">Il testo esportato contiene le chiavi API: lo tenga per sé.</p>
           <textarea id="io-text" rows="5" spellcheck="false"></textarea>
           <button type="button" class="btn" id="btn-export">Esporta</button>
           <button type="button" class="btn" id="btn-import">Importa</button>

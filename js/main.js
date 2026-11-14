@@ -504,7 +504,9 @@ $('#btn-google-off').addEventListener('click', () => {
 });
 
 $('#btn-export').addEventListener('click', () => {
-  $('#io-text').value = JSON.stringify(getSettings(), null, 2);
+  // Le chiavi API non vanno nel file esportato: restano solo su questo telefono.
+  const { anthropicKey, googleTtsKey, openaiKey, ...safe } = getSettings();
+  $('#io-text').value = JSON.stringify(safe, null, 2);
 });
 
 $('#btn-import').addEventListener('click', () => {

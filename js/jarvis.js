@@ -239,7 +239,7 @@ export async function runBriefing(onSource = () => {}) {
     system: [`${PERSONA}\n\n${BRIEFING_RULES}`],
     messages: [{ role: 'user', content: `Briefing, per favore. Dati raccolti:\n\n${JSON.stringify(data)}` }],
     schema: BRIEFING_SCHEMA,
-    maxTokens: 3000,
+    maxTokens: 5000,
   });
   const b = parseBriefing(resp);
 
